@@ -6,7 +6,6 @@ import re
 URL = 'https://habr.com'
 KEYWORDS = ['дизайн', 'фото', 'web', 'python']
 
-
 cookies_ = {
     '_ym_d': '1660160813',
     '_ym_uid': '1660160813305233842',
@@ -67,7 +66,17 @@ def get_articles_from_soup_obj(soup, root_url=None):
     return article_list
 
 
-def filter_articles_by_keywords(articles, keywords):
+def get_full_text_from_article_soup(soup):
+    full_article_text = soup.find(
+        class_='article-formatted-body article-formatted-body article-formatted-body_version-1')
+    if full_article_text is None:
+        full_article_text = soup.find(
+            class_='article-formatted-body article-formatted-body article-formatted-body_version-2')
+    res = full_article_text.text.strip()
+    return res
+
+
+def filter_articles_by_keywords(articles, keywords, is_in_text=False):
     filtered_articles = []
     for article in articles:
         full_content_string = article.get('title') + article.get('hubs') + article.get('preview_text')
@@ -75,21 +84,34 @@ def filter_articles_by_keywords(articles, keywords):
         search_res = re.search(search_pattern, full_content_string)
         if search_res is not None:
             filtered_articles.append(article)
+        elif is_in_text:
+            full_article_text = article.get('full_text')
+            search_res = re.search(search_pattern, full_article_text)
+            if search_res is not None:
+                filtered_articles.append(article)
     return filtered_articles
 
 
-def main(url, keywords, cookies=None, headers=None):
+def main(url, keywords, full_text_required=False, cookies=None, headers=None):
     response = requests.get(url, cookies=cookies, headers=headers)
     text = response.text
 
     soup = BeautifulSoup(text, features='html.parser')
     articles = get_articles_from_soup_obj(soup, root_url=url)
 
-    filtered_articles = filter_articles_by_keywords(articles, keywords)
+    if full_text_required:
+        for article in articles:
+            response = requests.get(article.get('href'), cookies=cookies, headers=headers)
+            text = response.text
+            soup = BeautifulSoup(text, features='html.parser')
+            full_article_text = get_full_text_from_article_soup(soup)
+            article['full_text'] = full_article_text
+
+    filtered_articles = filter_articles_by_keywords(articles, keywords, is_in_text=full_text_required)
 
     for article in filtered_articles:
         print(f"{article.get('date')} - {article.get('title')} - {article.get('href')}")
 
 
 if __name__ == '__main__':
-    main(URL, KEYWORDS, cookies=cookies_, headers=headers_)
+    main(URL, KEYWORDS, cookies=cookies_, headers=headers_, full_text_required=True)
